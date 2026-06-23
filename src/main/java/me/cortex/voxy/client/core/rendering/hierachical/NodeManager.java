@@ -324,7 +324,6 @@ public class NodeManager {
         } else if ((nodeId&NODE_TYPE_MSK)==NODE_TYPE_INNER) {
             this.updateChildSectionsInner(pos, nodeId&NODE_ID_MSK, childExistence);
         } else if ((nodeId&NODE_TYPE_MSK)==NODE_TYPE_LEAF) {
-
             //We might be leaf but we still might be inflight
             if (this.nodeData.isNodeRequestInFlight(nodeId&NODE_ID_MSK)) {
                 //  Logger.error("UNFINISHED OPERATION TODO: FIXME: painful operation, needs to account for both adding and removing, need to do the same with inner node, but also create requests, or cleanup children");
@@ -829,6 +828,7 @@ public class NodeManager {
         this.nodeData.setNodePosition(id, request.getPosition());
         this.nodeData.setNodeGeometry(id, request.getMesh());
         this.nodeData.setNodeChildExistence(id, request.getChildExistence());
+        this.nodeData.setNodeChildrenKnownEmpty(id, request.getChildExistence() == 0);
         //TODO: this (or remove)
         //this.nodeData.setNodeType();
         this.activeSectionMap.put(request.getPosition(), id|NODE_TYPE_LEAF);//Assume that the result of any single request type is a leaf node
@@ -1069,7 +1069,13 @@ public class NodeManager {
     //==================================================================================================================
     public void processRequest(long pos) {
         int nodeId = this.activeSectionMap.get(pos);
+        this.processRequest(pos, nodeId == -1 ? -1 : nodeId&NODE_ID_MSK);
+    }
+
+    public void processRequest(long pos, int requestedNodeId) {
+        int nodeId = this.activeSectionMap.get(pos);
         if (nodeId == -1) {
+            this.clearStaleGpuRequestFlag(requestedNodeId, pos);
             //TODO: make into timing thing
             //Logger.warn("Got request for pos " + WorldEngine.pprintPos(pos) + " but it was not in active map, ignoring!");
             return;
@@ -1077,14 +1083,21 @@ public class NodeManager {
         int nodeType = nodeId&NODE_TYPE_MSK;
         nodeId &= NODE_ID_MSK;
         if (nodeType == NODE_TYPE_REQUEST) {
+            this.clearStaleGpuRequestFlag(requestedNodeId, pos);
             Logger.error("Tried processing request for pos: " + WorldEngine.pprintPos(pos) + " but its type was a request, ignoring!");
             return;
         } else if (nodeType != NODE_TYPE_LEAF && nodeType != NODE_TYPE_INNER ) {
             throw new IllegalStateException("Unknown node type: " + nodeType);
         }
 
+        if (requestedNodeId != nodeId) {
+            this.clearStaleGpuRequestFlag(requestedNodeId, pos);
+            return;
+        }
+
 
         if (WorldEngine.getLevel(pos) == 0) {
+            this.clearStaleGpuRequestFlag(requestedNodeId, pos);
             Logger.error("Requests cannot exist for bottom level nodes. at: " + WorldEngine.pprintPos(pos) + ". Ignoring request");
             return;
         }
@@ -1124,12 +1137,14 @@ public class NodeManager {
                 if (!this.watcher.watch(pos, WorldEngine.UPDATE_TYPE_BLOCK_BIT)) {
                     Logger.warn("Node: " + nodeId + " at pos: " + WorldEngine.pprintPos(pos) + " got update request, but geometry was already being watched");
                 }
+                this.clearStaleGpuRequestFlag(requestedNodeId, pos);
                 return;
             }
 
             //Check if the node is already in-flight, if it is, dont do any processing
+            //Re-push state to GPU so shader's bit 0 syncs to CPU's in-flight=true → stops per-frame duplicate spam
             if (this.nodeData.isNodeRequestInFlight(nodeId)) {
-                Logger.warn("Tried processing a node that already has a request in flight: " + nodeId + " pos: " + WorldEngine.pprintPos(pos) + " ignoring");
+                this.invalidateNode(nodeId);
                 return;
             }
 
@@ -1144,6 +1159,20 @@ public class NodeManager {
         }
     }
 
+    private void clearStaleGpuRequestFlag(int requestedNodeId, long pos) {
+        if (requestedNodeId < 0 || !this.nodeData.nodeExists(requestedNodeId)) {
+            return;
+        }
+        if (this.nodeData.nodePosition(requestedNodeId) != pos) {
+            return;
+        }
+        if (this.nodeData.isNodeRequestInFlight(requestedNodeId)) {
+            return;
+        }
+        this.nodeData.setNodeRequest(requestedNodeId, NULL_REQUEST_ID);
+        this.invalidateNode(requestedNodeId);
+    }
+
     private void makeLeafChildRequest(int nodeId) {
         long pos = this.nodeData.nodePosition(nodeId);
         byte childExistence = this.nodeData.getNodeChildExistence(nodeId);
@@ -1155,6 +1184,11 @@ public class NodeManager {
                 this.invalidateNode(nodeId);
                 return;
             }
+            this.nodeData.setNodeChildrenKnownEmpty(nodeId, true);
+            this.nodeData.setNodeRequest(nodeId, NULL_REQUEST_ID);
+            this.nodeData.unmarkRequestInFlight(nodeId);
+            this.invalidateNode(nodeId);
+            return;
         }
 
         //Enqueue a leaf expansion request
@@ -1189,6 +1223,7 @@ public class NodeManager {
 
         this.nodeData.setNodeRequest(nodeId, requestId);
         this.activeNodeRequestCount++;
+        this.invalidateNode(nodeId);
     }
 
     //A request is received for an inner node position
