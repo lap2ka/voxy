@@ -24,10 +24,10 @@ layout(binding = SCENE_UNIFORM_BINDING, std140) uniform SceneUniform {
 #import <voxy:lod/hierarchical/node.glsl>
 #import <voxy:lod/hierarchical/screenspace.glsl>
 
-//SIMPLE_QUEUE(uvec2, requestQueue, REQUEST_QUEUE_BINDING);
+//SIMPLE_QUEUE(uvec4, requestQueue, REQUEST_QUEUE_BINDING);
 layout(binding = REQUEST_QUEUE_BINDING, std430) restrict buffer requestQueueStruct {
-    uvec2 requestQueueIndex;
-    uvec2[] requestQueue;
+    uvec4 requestQueueIndex;
+    uvec4[] requestQueue;
 };
 
 //SIMPLE_QUEUE(uint, renderQueue, RENDER_QUEUE_BINDING);
@@ -54,7 +54,7 @@ void addRequest(inout UnpackedNode node) {
             uint atomRes = atomicAdd(requestQueueIndex.x, 1);
             if (atomRes < MAX_REQUEST_QUEUE_SIZE) {//Hard limit
                 //Mark node as having a request submitted to prevent duplicate submissions
-                requestQueue[atomRes] = getRawPos(node);
+                requestQueue[atomRes] = uvec4(getRawPos(node), getId(node), 0u);
                 markRequested(node);
             }
         }
@@ -115,6 +115,12 @@ bool isWithinRenderDistance(in UnpackedNode node) {
     return xzDist <= renderDistance;
 }
 
+bool shouldRenderNodeSelf(in UnpackedNode node) {
+    if (renderDistance<0.0f) return true;
+    vec3 far = furthestPointToCamera(node);
+    return (far.x*far.x+far.z*far.z+(16*16*16))<=renderDistance;//the +16*16 is to add some buffer room
+}
+
 
 void traverse(in UnpackedNode node) {
     #ifdef HAS_STATISTICS
@@ -137,18 +143,14 @@ void traverse(in UnpackedNode node) {
                 enqueueChildren(node);
             } else {
                 //printf("B");
-                addRequest(node);
+                if (!childrenKnownEmpty(node)) {
+                    addRequest(node);
+                }
                 //TODO: use self mesh (is error state if it doesnt have one since all leaf nodes should have a mesh)
                 // Basicly guarenteed to have a mesh, if it doesnt it is very very bad and incorect since its a violation of the graph properties
                 // that all leaf nodes must contain a mesh
 
-                bool shouldRenderSelf = renderDistance<0.0f;
-                if (!shouldRenderSelf) {
-                    vec3 far = furthestPointToCamera(node);
-                    shouldRenderSelf = (far.x*far.x+far.z*far.z+(16*16*16))<=renderDistance;//the +16*16 is to add some buffer room
-                }
-
-                if (shouldRenderSelf) {
+                if (shouldRenderNodeSelf(node)) {
                     enqueueSelfForRender(node);
                 }
             }

@@ -210,6 +210,15 @@ public final class NodeStore {
         return ((this.localNodeData[id2idx(nodeId)+2]>>19)&1)!=0;
     }
 
+    public void setNodeChildrenKnownEmpty(int nodeId, boolean state) {
+        this.localNodeData[id2idx(nodeId)+2] &= ~(1L<<20);
+        this.localNodeData[id2idx(nodeId)+2] |= state?1L<<20:0;
+    }
+
+    public boolean getNodeChildrenKnownEmpty(int nodeId) {
+        return ((this.localNodeData[id2idx(nodeId)+2]>>20)&1)!=0;
+    }
+
     public void markNodeGeometryInFlight(int nodeId) {
         this.localNodeData[id2idx(nodeId)+1] |= 1L<<59;
     }
@@ -244,6 +253,9 @@ public final class NodeStore {
         data &= ~(0xFFL<<48);
         data |= Byte.toUnsignedLong(existence)<<48;
         this.localNodeData[idx] = data;
+        if (existence != 0) {
+            this.setNodeChildrenKnownEmpty(nodeId, false);
+        }
     }
 
     public int getChildPtrCount(int nodeId) {
@@ -276,6 +288,7 @@ public final class NodeStore {
 
         short flags = 0;
         flags |= (short) (this.isNodeRequestInFlight(nodeId)?1:0);//1 bit
+        flags |= (short) (this.getNodeChildrenKnownEmpty(nodeId)?1<<1:0);//1 bit
         flags |= (short) ((this.getChildPtrCount(nodeId)-1)<<2);//3 bit
 
         boolean isEligibleForCleaning = false;

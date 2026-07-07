@@ -166,12 +166,13 @@ public final class WorldSection {
 
     //Returns true on success, false on failure
     boolean trySetFreed() {
+        // TODO unvibecode
+        if (this.isDirty || this.inSaveQueue) {
+            return false;
+        }
         int witness = (int) ATOMIC_STATE_HANDLE.compareAndExchange(this, 1, 0);
         if ((witness & 1) == 0 && witness != 0) {
             throw new IllegalStateException("Section marked as free but has refs");
-        }
-        if (witness == 1 && (this.isDirty || this.inSaveQueue)) {
-            throw new IllegalStateException("Section freed while marked as dirty or in the save queue: " + (this.isDirty?"dirty, ":"") + (this.inSaveQueue?"saveQueue":""));
         }
         return witness == 1;
     }

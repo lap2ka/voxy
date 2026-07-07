@@ -264,16 +264,23 @@ public class ActiveSectionTracker {
                 return;
             }
 
-            if (section.getRefCount() == 0 && section.trySetFreed()) {
-                var cached = cache.remove(section.key);
-                var obj = cached.obj;
-                if (obj == null) {
-                    throw new IllegalStateException("This should be impossible: " + WorldEngine.pprintPos(section.key) + " secObj: " + System.identityHashCode(section));
+            if (section.getRefCount() == 0) {
+                if (section.trySetFreed()) {
+                    var cached = cache.remove(section.key);
+                    var obj = cached.obj;
+                    if (obj == null) {
+                        throw new IllegalStateException("This should be impossible: " + WorldEngine.pprintPos(section.key) + " secObj: " + System.identityHashCode(section));
+                    }
+                    if (obj != section) {
+                        throw new IllegalStateException("Removed section not the same as the referenced section in the cache: cached: " + obj + " got: " + section + " A: " + WorldSection.ATOMIC_STATE_HANDLE.get(obj) + " B: " +WorldSection.ATOMIC_STATE_HANDLE.get(section));
+                    }
+                    sec = section;
+                } else if (section.isDirty || section.inSaveQueue) {
+                    // TODO unvibecode, check actual cause
+                    lock.unlockWrite(stamp);
+                    this.tryUnload(section, hints);
+                    return;
                 }
-                if (obj != section) {
-                    throw new IllegalStateException("Removed section not the same as the referenced section in the cache: cached: " + obj + " got: " + section + " A: " + WorldSection.ATOMIC_STATE_HANDLE.get(obj) + " B: " +WorldSection.ATOMIC_STATE_HANDLE.get(section));
-                }
-                sec = section;
             }
         }
 

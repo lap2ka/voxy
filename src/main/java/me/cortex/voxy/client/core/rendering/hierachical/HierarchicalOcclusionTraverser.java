@@ -83,7 +83,7 @@ public class HierarchicalOcclusionTraverser {
         this.nodeCleaner = nodeCleaner;
         this.nodeManager = nodeManager;
         this.meshGen = meshGen;
-        this.requestBuffer = new GlBuffer(MAX_REQUEST_QUEUE_SIZE*8L+8).zero();
+        this.requestBuffer = new GlBuffer(MAX_REQUEST_QUEUE_SIZE*16L+16).zero();
         this.nodeBuffer = new GlBuffer(nodeManager.maxNodeCount*16L).fill(-1);
 
 
@@ -222,7 +222,8 @@ public class HierarchicalOcclusionTraverser {
             double iFillness = Math.max(0, (TARGET_COUNT - this.meshGen.getTaskCount()) / TARGET_COUNT);
             iFillness = Math.pow(iFillness, 2);
             final int requestSize = (int) Math.ceil(iFillness * MAX_REQUEST_QUEUE_SIZE);
-            MemoryUtil.memPutInt(ptr, Math.max(0, Math.min(MAX_REQUEST_QUEUE_SIZE, requestSize)));ptr += 4;
+            final int clampedRequestSize = Math.max(0, Math.min(MAX_REQUEST_QUEUE_SIZE, requestSize));
+            MemoryUtil.memPutInt(ptr, clampedRequestSize);ptr += 4;
         }
 
         //Put the render distance here so that it can generate a correct circle, TODO: make it not top level section sized
@@ -354,27 +355,27 @@ public class HierarchicalOcclusionTraverser {
     }
 
     private void forwardDownloadResult(long ptr, long size) {
-        int count = MemoryUtil.memGetInt(ptr);ptr += 8;//its 8 since we need to skip the second value (which is empty)
+        int count = MemoryUtil.memGetInt(ptr);ptr += 16;//Skip request queue header
         if (count < 0 || count > 50000) {
             Logger.error(new IllegalStateException("Count unexpected extreme value: " + count + " things may get weird"));
             return;
         }
-        if (count > (this.requestBuffer.size()>>3)-1) {
+        if (count > ((this.requestBuffer.size()-16)>>4)) {
             //This should not break the synchonization between gpu and cpu as in the traversal shader is
             // `if (atomRes < REQUEST_QUEUE_SIZE) {` which forcefully clamps to the request size
 
             //Logger.warn("Count over max buffer size, clamping, got count: " + count + ".");
 
-            count = (int) ((this.requestBuffer.size()>>3)-1);
+            count = (int) ((this.requestBuffer.size()-16)>>4);
 
             //Write back the clamped count
-            MemoryUtil.memPutInt(ptr-8, count);
+            MemoryUtil.memPutInt(ptr-16, count);
         }
         //if (count > REQUEST_QUEUE_SIZE) {
         //    Logger.warn("Count larger than 'maxRequestCount', overflow captured. Overflowed by " + (count-REQUEST_QUEUE_SIZE));
         //}
         if (count != 0) {
-            this.nodeManager.submitRequestBatch(new MemoryBuffer(count*8L+8).cpyFrom(ptr-8));// the -8 is because we incremented it by 8
+            this.nodeManager.submitRequestBatch(new MemoryBuffer(count*16L+16).cpyFrom(ptr-16));// the -16 is because we incremented it by 16
         }
     }
 

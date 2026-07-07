@@ -121,6 +121,15 @@ public class ModelFactory {
 
     private static final ObjectSet<BlockState> LOGGED_SELF_CULLING_WARNING = new ObjectOpenHashSet<>();
 
+    private static final Set<ResourceLocation> WORKAROUND_BLOCK_STATES = Set.of(
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "sugi_leaves"),
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "mahogany_leaves"),
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "larch_leaves"),
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "aspen_leaves"),
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "lush_fern"),
+        ResourceLocation.fromNamespaceAndPath("natures_spirit", "large_lush_fern")
+    );
+
     private final Mapper mapper;
     private final ModelStore storage;
 
@@ -808,7 +817,7 @@ public class ModelFactory {
         BlockState defaultState = block.defaultBlockState();
         var blockColors = Minecraft.getInstance().getBlockColors();
         if (block instanceof LiquidBlock) {
-            return (state, world, pos, tintIndex) -> blockColors.getColor(state, world, pos, tintIndex);
+            return blockColors::getColor;
         }
         int color;
         try {
@@ -817,7 +826,10 @@ public class ModelFactory {
             return null;
         }
         if (color != 0 && color != -1) {
-            return (state, world, pos, tintIndex) -> blockColors.getColor(state, world, pos, tintIndex);
+            return blockColors::getColor;
+        }
+        if (WORKAROUND_BLOCK_STATES.contains(BuiltInRegistries.BLOCK.getKey(block))) {
+            return blockColors::getColor;
         }
         return null;
     }
