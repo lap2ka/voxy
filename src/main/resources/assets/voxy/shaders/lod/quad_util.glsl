@@ -31,6 +31,7 @@ struct QuadData {
     //Used for computing the 4 corners of the quad
     vec3 basePoint;
     vec2 quadSizeAddin;
+    vec2 geometrySizeAddin;
     vec2 uvCorner;
 };
 
@@ -148,11 +149,30 @@ void setupQuad(out QuadData quad, const in Quad rawQuad, uvec2 sPos, bool genera
     quad.quadSizeAddin = faceSize.yw + quadSize - 1;
     #endif
     quad.uvCorner = faceSize.xz;
+    quad.geometrySizeAddin = quad.quadSizeAddin;
+
+    if ((modelIsFluid(model) || modelIsOpaque(model)) && hasSurfaceHeight(rawQuad)) {
+        uint scaleMask = (1u<<lodLevel)-1u;
+        float topInset = float(scaleMask-(extractSurfaceSourceY(rawQuad)&scaleMask));
+        float surfaceTopDepth = extractFaceIndentation(model.faceData[1]);
+        if (face == 1u) {
+            quad.basePoint.y += depthOffset*lodScale-topInset-surfaceTopDepth;
+        } else if (face >= 2u) {
+            uint verticalAxis = face>=4u?0u:1u;
+            float fullHeight = float(quadSize[verticalAxis]);
+            float lower = faceSize[verticalAxis==0u?0u:2u];
+            float height = fullHeight-(topInset+surfaceTopDepth)/lodScale-lower;
+            #ifdef USE_SINGLE_TRI
+            height = 2.0*height+lower;
+            #endif
+            quad.geometrySizeAddin[verticalAxis] = height;
+        }
+    }
 }
 
 vec4 getQuadCornerPos(in QuadData quad, uint cornerId) {
     vec2 cornerMask = vec2((cornerId>>1)&1u, cornerId&1u)*quad.lodScale;
-    vec3 point = quad.basePoint + swizzelDataAxis(quad.axis,vec3(quad.quadSizeAddin*cornerMask,0));
+    vec3 point = quad.basePoint + swizzelDataAxis(quad.axis,vec3(quad.geometrySizeAddin*cornerMask,0));
     vec4 pos = MVP * vec4(point, 1.0f);
     pos.xy += taaOffset*pos.w;
     return pos;

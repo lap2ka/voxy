@@ -632,6 +632,8 @@ public class ModelFactory {
         modelFlags |= colourProvider != null?1:0;
         modelFlags |= isBiomeColourDependent?2:0;//Basicly whether to use the next int as a colour or as a base index/id into a colour buffer for biome dependent colours
         modelFlags |= layer == RenderType.translucent()?4:0;//Is translucent
+        modelFlags |= isFluid?16:0;
+        modelFlags |= fullyOpaque?32:0;
 
 
         //TODO: THIS

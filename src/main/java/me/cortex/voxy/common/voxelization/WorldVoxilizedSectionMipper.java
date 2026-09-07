@@ -2,6 +2,7 @@ package me.cortex.voxy.common.voxelization;
 
 import me.cortex.voxy.common.world.other.Mapper;
 import me.cortex.voxy.common.world.other.Mipper;
+import me.cortex.voxy.common.world.other.VoxelSurface;
 
 public class WorldVoxilizedSectionMipper {
     private static int G(int x, int y, int z) {
@@ -22,6 +23,13 @@ public class WorldVoxilizedSectionMipper {
 
     public static void mipSection(VoxelizedSection section, Mapper mapper) {
         var data = section.section;
+
+        for (int index = 0; index < 16*16*16; index++) {
+            long block = data[index];
+            if (!Mapper.isAir(block)) {
+                data[index] = VoxelSurface.withHeight(block, index>>8);
+            }
+        }
 
         //Mip L1
         int i = 0;
