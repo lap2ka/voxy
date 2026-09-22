@@ -10,7 +10,6 @@ import me.cortex.voxy.common.util.UnsafeUtil;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldSection;
 import me.cortex.voxy.common.world.other.Mapper;
-import me.cortex.voxy.common.world.other.VoxelSurface;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import org.lwjgl.system.MemoryUtil;
 
@@ -202,20 +201,19 @@ public class RenderDataFactory {
         return 0b111L&(0b000_000_010_100L>>(ModelQueries._isTranslucent(metadata)*6+ModelQueries._isDoubleSided(metadata)*3));
     }
 
-    private static long packPartialQuadData(int modelId, long state, long metadata, int lodLevel) {
+    private static long packPartialQuadData(int modelId, long state, long metadata) {
         //This uses hardcoded data to shuffle things
         long lightAndBiome =  (state&((0x1FFL<<47)|(0xFFL<<56)))>>>1;
         lightAndBiome &= ~(ModelQueries._notIsBiomeColoured(metadata) * (0x1FFL << 46));//46 not 47 because is already shifted by 1 THIS WASTED 4 HOURS ;-; aaaaaAAAAAA
         lightAndBiome &= ~(ModelQueries._isFullyOpaque(metadata)*(0xFFL << 55));//If its fully opaque it always uses neighbor light?
 
         long quadData = lightAndBiome;
-        quadData |= VoxelSurface.packQuadHeight(state, lodLevel);
         quadData |= Integer.toUnsignedLong(modelId)<<26;
         quadData |= getQuadTyping(metadata);//Returns the typing already shifted by 1
         return quadData;
     }
 
-    private int prepareSectionData(final long[] rawSectionData, int lodLevel) {
+    private int prepareSectionData(final long[] rawSectionData) {
         final var sectionData = this.sectionData;
         final var rawModelIds = this.modelMan._unsafeRawAccess();
         long opaque = 0;
@@ -244,8 +242,8 @@ public class RenderDataFactory {
 
                         long modelMetadata = this.modelMan.getModelMetadataFromClientId(modelId);
 
-                        sectionData[i*2] = packPartialQuadData(modelId, block, modelMetadata, lodLevel);
-                        sectionData[i*2 + 1] = modelMetadata;
+                        sectionData[i * 2] = packPartialQuadData(modelId, block, modelMetadata);
+                        sectionData[i * 2 + 1] = modelMetadata;
 
                         notEmpty |= 1L << j;
                         opaque |= ModelQueries._isFullyOpaque(modelMetadata)<<j;
@@ -1729,7 +1727,7 @@ public class RenderDataFactory {
         Arrays.fill(this.fluidMasks, 0);
 
         //Prepare everything
-        int neighborMskAndFlags = this.prepareSectionData(section._unsafeGetRawDataArray(), section.lvl);
+        int neighborMskAndFlags = this.prepareSectionData(section._unsafeGetRawDataArray());
         if ((neighborMskAndFlags&(1<<31))!=0) {//We failed to get everything so throw exception
             throw new IdNotYetComputedException(neighborMskAndFlags&((1<<20)-1), true);
         }
